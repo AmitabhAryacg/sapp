@@ -1,0 +1,164 @@
+steps:
+  - id: 'set_envs'
+    name: 'ubuntu'
+    entrypoint: 'bash'
+    # args: ['bash']
+    env:
+    - 'VERSION=$_VERSION'
+    # - 'PROJECT_ID=$PROJECT_ID'
+    # - 'PROJECT_NUMBER=$PROJECT_NUMBER'
+    # - 'REV=$REVISION_ID'
+    # subsubstitutions:
+    #   - 
+
+  - id: 'pull'
+    name: 'gcr.io/cloud-builders/git'
+    args: 
+      - 'clone'
+      - 'https://oauth2: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@github.com/AmitabhAryacg/sapp.git'
+  
+  
+  - id: 'validate_pull'  
+    name: 'ubuntu'
+    waitFor:
+      - 'pull'
+    args: 
+    - 'echo'
+    - '\n--------------------- pull done-------------------\n'
+  
+  
+  - id: 'build'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - '/workspace/Dockerfile'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+      - '.'
+  
+  
+  - id: 'validate_build'  
+    name: 'ubuntu'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+    args: 
+    - 'echo'
+    - '\n--------------------- build done-------------------\n'
+
+
+  - id: 'publish'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+  
+  
+  - id: 'validate_push'  
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+      - 'publish'
+    name: 'ubuntu'
+    args: 
+    - 'echo'
+    - '\n--------------------- push done-------------------\n'
+
+  - id: 'create-attestation'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+      - 'publish'
+      - 'validate_push'
+    name: 'gcr.io/pkyc-400916/binauthz-attestation:latest'
+    args:
+      - '--artifact-url'
+      - 'us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+      - '--attestor'
+      - 'projects/pkyc-400916/attestors/SecurityTeamRules'
+      - '--keyversion'
+      - 'projects/pkyc-400916/locations/us-central1/keyRings/gke-keyring/cryptoKeys/attestor-key/cryptoKeyVersions/1'
+
+  - id: 'validate_attestation'  
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+      - 'publish'
+      - 'validate_push'
+      - 'create-attestation'
+    name: 'ubuntu'
+    args: 
+    - 'echo'
+    - '\n*** Final task has been completed. Your attestated image is in repository ***\n'
+  - id: 'Prepare deploy'
+    name: 'gcr.io/cloud-builders/gke-deploy'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+      - 'publish'
+      - 'validate_push'
+      - 'create-attestation'
+      - 'validate_attestation'
+    args:
+    - 'prepare'
+    - '--image=us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+    - '--expose=80'
+    - '--app=ms1'
+    - '--version=$_VERSION'
+    - '--namespace=dev2'
+    - '--output=gs://pkyc_cicd/'
+    - '--annotation=gcb-build-id=$BUILD_ID'
+
+  - id: 'Apply deploy'
+    name: 'gcr.io/cloud-builders/gke-deploy'
+    waitFor:
+      - 'pull'
+      - 'validate_pull'
+      - 'build'
+      - 'validate_build'
+      - 'publish'
+      - 'validate_push'
+      - 'create-attestation'
+      - 'validate_attestation'
+      - 'Prepare deploy'
+    args:
+    - 'apply'
+    - '--filename=gs://pkyc_cicd/expanded/*'
+    - '--namespace=dev2'
+    - '--cluster=cicd-demo'
+    - '--location=us-central1-c'
+    # - '--image=us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+    # - '--images=[us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION]'
+    # images:
+    # - 'us-central1-docker.pkg.dev/pkyc-400916/cicd/helloapp1:$_VERSION'
+
+  # options:
+  #   substitution_option: 'ALLOW_LOOSE'
+  # tags: ['ms1']
+
+
+  # - id: 'run-help'
+  #   name: 'gcr.io/cloud-builders/docker'
+  #   args:
+  #     - 'run'
+  #     - 'gcr.io/$PROJECT_ID/binauthz-attestation:latest'
+  #     - '--help'
+# tags: ['cloud-builders-Amitabh']
